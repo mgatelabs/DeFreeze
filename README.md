@@ -1,6 +1,6 @@
 # DeFreeze
 
-A simple puthon script that utalizes FFMpeg to remove Audio / Video freezes from MP4 files.
+A simple python 3 script that utalizes FFMpeg to remove Audio / Video freezes from MP4 files.
 
 ##Instructions
 
@@ -9,3 +9,4 @@ A simple puthon script that utalizes FFMpeg to remove Audio / Video freezes from
 3. Place Mp4 files inside the ``in`` folder
 4. Run the main.py file
 5. Wait for it to finish
+6. Find the finished files in ``out``
