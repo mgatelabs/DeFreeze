@@ -1,6 +1,6 @@
 # DeFreeze
 
-A simple puthon script that utalizes FFMpeg to revove Audio / Video freezes from MP4 files.
+A simple puthon script that utalizes FFMpeg to remove Audio / Video freezes from MP4 files.
 
 ##Instructions
 
