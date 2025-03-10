@@ -3,6 +3,7 @@ import shutil
 import subprocess
 from glob import glob
 import os
+import argparse
 
 def detect_freezes(file_path):
     cmd = [
@@ -70,7 +71,8 @@ def merge_intervals(video_gaps, audio_gaps, min_duration=3.0):
     return merged
 
 
-def cut_gaps(file_path, output_file):
+def cut_gaps(file_path, output_file, force: bool = False):
+    print(f"Analysing: {file_path}")
     freezes = detect_freezes(file_path)
     silences = detect_silences(file_path)
 
@@ -78,10 +80,24 @@ def cut_gaps(file_path, output_file):
     gaps = merge_intervals(freezes, silences, min_duration=1.5)
 
     if not gaps:
-        print(f"No significant gaps detected in {file_path}. Copying the original file.")
-        #subprocess.run(["copy", file_path, output_file])  # Use shutil.copy for cross-platform
-        shutil.copy(file_path, output_file)
-        return True
+        if force:
+            print(f"No significant gaps detected in {file_path}. Encoding the original file.")
+
+            cmd = [
+                "ffmpeg", "-i", file_path,
+                 "-profile:v", "high", "-level", "4.2", "-crf", "28", "-movflags",
+                "+faststart", "-c:a", "aac", "-b:a", "128k", "-preset", 'slower', output_file
+            ]
+
+            print(f"Running FFmpeg command: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True)
+
+            return True
+        else:
+            print(f"No significant gaps detected in {file_path}. Copying the original file.")
+            # subprocess.run(["copy", file_path, output_file])  # Use shutil.copy for cross-platform
+            shutil.copy(file_path, output_file)
+            return True
 
     inputs = []
     filter_inputs = []
@@ -114,13 +130,23 @@ def cut_gaps(file_path, output_file):
     subprocess.run(cmd, check=True)
     return True
 
-input_folder = "in"
-output_folder = "out"
-os.makedirs(output_folder, exist_ok=True)
+def main():
+    parser = argparse.ArgumentParser(description="Process data with optional encoding.")
+    #parser.add_argument("data", type=str, help="The data to process")
+    parser.add_argument("--forceEncode", action="store_true", help="Enable encoding")
 
-for file in glob(os.path.join(input_folder, "*.mp4")):
-    filename = os.path.basename(file)
-    output_file = os.path.join(output_folder, filename)
-    if cut_gaps(file, output_file):
-            os.unlink(file)
-    print(f"Processed: {filename}")
+    args = parser.parse_args()
+
+    input_folder = "in"
+    output_folder = "out"
+    os.makedirs(output_folder, exist_ok=True)
+
+    for file in glob(os.path.join(input_folder, "*.mp4")):
+        filename = os.path.basename(file)
+        output_file = os.path.join(output_folder, filename)
+        if cut_gaps(file, output_file, args.forceEncode):
+                os.unlink(file)
+        print(f"Processed: {filename}")
+
+if __name__ == "__main__":
+    main()
