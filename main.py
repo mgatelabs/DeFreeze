@@ -1,9 +1,9 @@
+import argparse
+import os
 import re
 import shutil
 import subprocess
-from glob import glob
-import os
-import argparse
+
 
 def detect_freezes(file_path):
     cmd = [
@@ -85,7 +85,7 @@ def cut_gaps(file_path, output_file, force: bool = False):
 
             cmd = [
                 "ffmpeg", "-i", file_path,
-                 "-profile:v", "high", "-level", "4.2", "-crf", "28", "-movflags",
+                "-profile:v", "high", "-level", "4.2", "-crf", "30", "-movflags",
                 "+faststart", "-c:a", "aac", "-b:a", "128k", "-preset", 'slower', output_file
             ]
 
@@ -123,30 +123,45 @@ def cut_gaps(file_path, output_file, force: bool = False):
     cmd = [
         "ffmpeg", *inputs,
         "-filter_complex", filter_complex,
-        "-map", "[outv]", "-map", "[outa]", "-profile:v", "high","-level", "4.2", "-crf", "28", "-movflags", "+faststart", "-c:a", "aac", "-b:a", "128k", "-preset", 'slower', output_file
+        "-map", "[outv]", "-map", "[outa]", "-profile:v", "high", "-level", "4.2", "-crf", "28", "-movflags",
+        "+faststart", "-c:a", "aac", "-b:a", "128k", "-preset", 'slower', output_file
     ]
 
     print(f"Running FFmpeg command: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
     return True
 
+
 def main():
     parser = argparse.ArgumentParser(description="Process data with optional encoding.")
-    #parser.add_argument("data", type=str, help="The data to process")
+    # parser.add_argument("data", type=str, help="The data to process")
     parser.add_argument("--forceEncode", action="store_true", help="Enable encoding")
 
     args = parser.parse_args()
 
     input_folder = "in"
     output_folder = "out"
-    os.makedirs(output_folder, exist_ok=True)
 
-    for file in glob(os.path.join(input_folder, "*.mp4")):
-        filename = os.path.basename(file)
-        output_file = os.path.join(output_folder, filename)
-        if cut_gaps(file, output_file, args.forceEncode):
-                os.unlink(file)
-        print(f"Processed: {filename}")
+    for root, dirs, files in os.walk(input_folder):
+        for file in files:
+            if not file.endswith(".mp4"):
+                continue
+
+            input_file = os.path.join(root, file)
+            relative_path = os.path.relpath(root, input_folder)
+            output_dir = os.path.join(output_folder, relative_path)
+            os.makedirs(output_dir, exist_ok=True)
+
+            output_file = os.path.join(output_dir, file)
+
+            if os.path.exists(output_file):
+                print(f"Skipping (already exists): {output_file}")
+                continue
+
+            if cut_gaps(input_file, output_file, args.forceEncode):
+                os.unlink(input_file)
+            print(f"Processed: {input_file} -> {output_file}")
+
 
 if __name__ == "__main__":
     main()
