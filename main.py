@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+import zipfile
 
 def detect_freezes(file_path):
     cmd = [
@@ -152,6 +153,21 @@ def main():
 
     files_to_process = []
 
+    # Step 1: Preprocess ZIP files
+    for root, _, files in os.walk(input_folder):
+        for file in files:
+            if file.lower().endswith(".zip"):
+                zip_path = os.path.join(root, file)
+                print(f"Extracting: {zip_path}")
+                try:
+                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                        zip_ref.extractall(root)
+                    os.remove(zip_path)
+                    print(f"Deleted zip: {zip_path}")
+                except zipfile.BadZipFile:
+                    print(f"Skipping bad zip file: {zip_path}")
+
+    # Step 2: Find MP4 files to process
     for root, _, files in os.walk(input_folder):
         for file in files:
             if not file.endswith(".mp4"):
