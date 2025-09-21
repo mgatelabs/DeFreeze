@@ -3,9 +3,9 @@ import os
 import re
 import shutil
 import subprocess
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 def detect_freezes(file_path):
     cmd = [
@@ -123,8 +123,8 @@ def cut_gaps_with_analysis(file_path, output_file, freezes, silences, force: boo
     return True
 
 
-def analyze_file(input_file):
-    print(f"Analyzing: {input_file}")
+def analyze_file(input_file, position, total_items):
+    print(f"Analyzing ({position}/{total_items}): {input_file}")
     freezes = detect_freezes(input_file)
     silences = detect_silences(input_file)
     return input_file, freezes, silences
@@ -182,11 +182,15 @@ def main():
                 continue
             files_to_process.append((input_file, output_file))
 
-    # Step 1: Serial or Parallel Analysis
+    # Step 1: Serial Analysis
     print(f"Starting analysis for {len(files_to_process)} files...")
     analysis_results = []
+    file_position = 1
+    total_files = len(files_to_process)
     for input_file, output_file in files_to_process:
-        analysis_results.append((*analyze_file(input_file), output_file, args.forceEncode, args.verbose))
+        analysis_results.append(
+            (*analyze_file(input_file, file_position, total_files), output_file, args.forceEncode, args.verbose))
+        file_position = file_position + 1
 
     # Step 2: Multithreaded Encoding
     print(f"Encoding using {args.threads} threads...")
