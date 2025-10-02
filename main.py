@@ -3,8 +3,11 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Thread, Lock
 
 
 def detect_freezes(file_path):
@@ -78,7 +81,7 @@ def cut_gaps_with_analysis(file_path, output_file, freezes, silences, force: boo
 
     if not gaps:
         if force:
-            print(f"No significant gaps in {file_path}. Encoding the original file.")
+            # print(f"No significant gaps in {file_path}. Encoding the original file.")
             cmd = [
                 "ffmpeg", "-i", file_path,
                 "-profile:v", "high", "-level", "4.2", "-crf", "30", "-movflags",
@@ -88,7 +91,7 @@ def cut_gaps_with_analysis(file_path, output_file, freezes, silences, force: boo
                            stdout=None if verbose else subprocess.DEVNULL,
                            stderr=None if verbose else subprocess.DEVNULL)
         else:
-            print(f"No significant gaps in {file_path}. Copying original file.")
+            # print(f"No significant gaps in {file_path}. Copying original file.")
             shutil.copy(file_path, output_file)
         return True
 
@@ -130,18 +133,69 @@ def analyze_file(input_file, position, total_items):
     return input_file, freezes, silences
 
 
+# Threading
+
+# shared status dict
+status = {}
+status_lock = Lock()
+running = True  # flag to stop printer thread
+
+
 def encode_wrapper(job):
-    input_file, freezes, silences, output_file, force, verbose = job
+    input_file, output_file, force, verbose, job_id = job
     print(f"Encoding: {input_file}")
     try:
+        with status_lock:
+            status[job_id] = f'Detect Freeze: {input_file}'
+        freezes = detect_freezes(input_file)
+        with status_lock:
+            status[job_id] = f'Detect Silence: {input_file}'
+        with status_lock:
+            silences = detect_silences(input_file)
+        status[job_id] = f'Working: {input_file}'
         if cut_gaps_with_analysis(input_file, output_file, freezes, silences, force, verbose):
             os.unlink(input_file)
-        print(f"Finished: {input_file}")
+        with status_lock:
+            status[job_id] = 'Finished'
     except Exception as e:
         print(f"Error encoding {input_file}: {e}")
 
 
+def printer(num_jobs):
+    line_width = 80  # fixed width
+
+    # Print initial block
+    print("Thread Status:")
+    for _ in range(num_jobs):
+        print(" " * line_width)
+    print(" " * line_width)
+
+    while running:
+        with status_lock:
+            # move cursor up (jobs + 2 header/footer lines)
+            sys.stdout.write("\033[F" * (num_jobs + 2))
+            sys.stdout.flush()
+
+            def fmt(text):
+                text = text[:line_width]  # truncate if too long
+                return text.ljust(line_width)  # pad if too short
+
+            print(fmt("Thread Status:"))
+            for job_id in range(num_jobs):
+                line = status.get(job_id, f"Job {job_id}: Waiting")
+                print(fmt(line))
+            unfinished = sum("Finished" not in v for v in status.values())
+            print(fmt(f"Work: {unfinished} items left"))
+
+        if unfinished == 0:
+            break
+
+        time.sleep(1.0)
+
+
 def main():
+    global running
+
     parser = argparse.ArgumentParser(description="Multi-threaded gap cutter.")
     parser.add_argument("--forceEncode", action="store_true", help="Force encode even if no gaps")
     parser.add_argument("--threads", type=int, default=3, help="Number of encoding threads")
@@ -186,11 +240,19 @@ def main():
     print(f"Starting analysis for {len(files_to_process)} files...")
     analysis_results = []
     file_position = 1
+    job_id = 0
     total_files = len(files_to_process)
     for input_file, output_file in files_to_process:
         analysis_results.append(
-            (*analyze_file(input_file, file_position, total_files), output_file, args.forceEncode, args.verbose))
+            (input_file, output_file, args.forceEncode, args.verbose, job_id))
         file_position = file_position + 1
+        job_id += 1
+
+    num_jobs = len(analysis_results)
+
+    # start printer thread
+    t = Thread(target=printer, args=(num_jobs,), daemon=True)
+    t.start()
 
     # Step 2: Multithreaded Encoding
     print(f"Encoding using {args.threads} threads...")
@@ -198,6 +260,10 @@ def main():
         futures = [executor.submit(encode_wrapper, job) for job in analysis_results]
         for f in as_completed(futures):
             f.result()  # Will raise exception if any
+
+    # stop printer thread
+    running = False
+    t.join(timeout=1)
 
     print("All done.")
 
